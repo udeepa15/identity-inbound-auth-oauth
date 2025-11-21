@@ -23,6 +23,8 @@ package org.wso2.carbon.identity.oauth2;
  */
 public class OAuth2Constants {
 
+    public static final String AUDIENCE = "audience";
+
     /**
      * Constants for access token binders.
      */
