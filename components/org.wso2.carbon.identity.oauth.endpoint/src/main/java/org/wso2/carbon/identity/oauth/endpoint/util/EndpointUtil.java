@@ -88,6 +88,7 @@ import org.wso2.carbon.identity.oauth2.IdentityOAuth2Exception;
 import org.wso2.carbon.identity.oauth2.IdentityOAuth2ScopeConsentException;
 import org.wso2.carbon.identity.oauth2.IdentityOAuth2ScopeException;
 import org.wso2.carbon.identity.oauth2.IdentityOAuth2ScopeServerException;
+import org.wso2.carbon.identity.oauth2.OAuth2Constants;
 import org.wso2.carbon.identity.oauth2.Oauth2ScopeConstants;
 import org.wso2.carbon.identity.oauth2.RequestObjectException;
 import org.wso2.carbon.identity.oauth2.bean.OAuthClientAuthnContext;
@@ -1327,7 +1328,7 @@ public class EndpointUtil {
         }
         if (paramMap != null) {
             for (Map.Entry<String, List<String>> paramEntry : paramMap.entrySet()) {
-                if (paramEntry.getValue().size() > 1) {
+                if (paramEntry.getValue().size() > 1 && !OAuth2Constants.AUDIENCE.equals(String.valueOf(paramEntry.getKey()))) {
                     if (log.isDebugEnabled()) {
                         log.debug("Repeated param found:" + paramEntry.getKey());
                     }
@@ -1345,7 +1346,7 @@ public class EndpointUtil {
         if (request.getParameterMap() != null) {
             Map<String, String[]> map = request.getParameterMap();
             for (Map.Entry<String, String[]> entry : map.entrySet()) {
-                if (entry.getValue().length > 1) {
+                if (entry.getValue().length > 1 && !OAuth2Constants.AUDIENCE.equals(entry.getKey())) {
                     if (log.isDebugEnabled()) {
                         log.debug("Repeated param found:" + entry.getKey());
 
