@@ -44,6 +44,7 @@ public class OAuth2Constants {
         public static final String JWT = "jwt";
     }
 
+    public static final String AUDIENCE = "audience";
     public static final String GROUPS = "groups";
     public static final String ENTITY_ID = "entity_id";
     public static final String IS_CONSENTED = "is_consented";
