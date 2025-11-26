@@ -658,7 +658,11 @@ public abstract class AbstractAuthorizationGrantHandler implements Authorization
         long validityPeriodInMillis = getConfiguredExpiryTimeForApplication(tokReqMsgCtx, consumerKey, oAuthAppBean);
         tokReqMsgCtx.setValidityPeriod(validityPeriodInMillis);
         tokReqMsgCtx.setAccessTokenIssuedTime(timestamp.getTime());
-        tokReqMsgCtx.setAudiences(OAuth2Util.getOIDCAudience(consumerKey, oAuthAppBean));
+
+        // Only set audiences if not already set by the grant handler (e.g., token exchange)
+        if (tokReqMsgCtx.getAudiences() == null) {
+            tokReqMsgCtx.setAudiences(OAuth2Util.getOIDCAudience(consumerKey, oAuthAppBean));
+        }
 
         updateRefreshTokenValidityPeriodInMessageContext(oAuthAppBean, existingTokenBean, tokReqMsgCtx);
     }

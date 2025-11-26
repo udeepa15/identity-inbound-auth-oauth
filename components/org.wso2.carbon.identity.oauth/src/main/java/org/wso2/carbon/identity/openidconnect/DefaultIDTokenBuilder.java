@@ -194,7 +194,10 @@ public class DefaultIDTokenBuilder implements org.wso2.carbon.identity.openidcon
                     currentTimeInMillis));
         }
 
-        List<String> audience = OAuth2Util.getOIDCAudience(clientId, oAuthAppDO);
+        // Use audiences from the token request context if available (e.g., for token exchange),
+        // otherwise fall back to all registered OIDC audiences
+        List<String> audience = tokenReqMsgCtxt.getAudiences() != null ?
+                tokenReqMsgCtxt.getAudiences() : OAuth2Util.getOIDCAudience(clientId, oAuthAppDO);
 
         JWTClaimsSet.Builder jwtClaimsSetBuilder = new JWTClaimsSet.Builder();
         jwtClaimsSetBuilder.jwtID(UUID.randomUUID().toString());
