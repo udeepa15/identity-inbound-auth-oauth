@@ -39,6 +39,7 @@ import org.wso2.carbon.identity.oauth2.IdentityOAuth2Exception;
 import org.wso2.carbon.identity.oauth2.util.OAuth2Util;
 
 import java.security.KeyStore;
+import java.security.PublicKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateEncodingException;
 import java.security.cert.X509Certificate;
@@ -135,50 +136,81 @@ public class JwksEndpoint {
                 X509Certificate cert = (X509Certificate) certInfo.getCertificate();
                 Certificate[] certChain = certInfo.getCertificateChain();
                 List<Base64> encodedCertList = generateEncodedCertList(certChain, alias);
-                RSAKey.Builder jwk = getJWK(algorithm, encodedCertList, cert,
-                        hashingAlgorithm, alias);
-                jwksArray.add(jwk.build().toJSONObject());
+                JWK jwk = getJWK(algorithm, encodedCertList, cert, hashingAlgorithm, alias);
+                
+                // Skip if key type is not supported
+                if (jwk != null) {
+                    jwksArray.add(jwk.toJSONObject());
+                }
             }
         }
     }
 
-    private RSAKey.Builder getJWK(JWSAlgorithm algorithm, List<Base64> encodedCertList, X509Certificate certificate,
-                                  String kidAlgorithm, String alias)
+    private JWK getJWK(JWSAlgorithm algorithm, List<Base64> encodedCertList, X509Certificate certificate,
+                      String kidAlgorithm, String alias)
             throws ParseException, IdentityOAuth2Exception, JOSEException {
 
-        RSAKey.Builder jwk = new RSAKey.Builder((RSAPublicKey) certificate.getPublicKey());
+        PublicKey publicKey = certificate.getPublicKey();
+        
+        // Only handle RSA keys - EdDSA and EC keys are served via separate endpoint
+        if (!(publicKey instanceof RSAPublicKey)) {
+            if (log.isDebugEnabled()) {
+                log.debug("Skipping non-RSA key for alias: " + alias + 
+                         ", algorithm: " + publicKey.getAlgorithm() + 
+                         " (EdDSA/EC keys are served via separate endpoint)");
+            }
+            return null;
+        }
+        
+        // Determine key ID
+        String keyId;
         if (kidAlgorithm.equals(OAuthConstants.SignatureAlgorithms.KID_HASHING_ALGORITHM)) {
-            jwk.keyID(OAuth2Util.getKID(certificate, algorithm, getTenantDomain()));
+            keyId = OAuth2Util.getKID(certificate, algorithm, getTenantDomain());
         } else {
-            jwk.keyID(OAuth2Util.getPreviousKID(certificate, algorithm, getTenantDomain()));
+            keyId = OAuth2Util.getPreviousKID(certificate, algorithm, getTenantDomain());
         }
-        jwk.algorithm(algorithm);
-        jwk.keyUse(KeyUse.parse(KEY_USE));
+
+        // Build RSA JWK
+        RSAKey.Builder builder = new RSAKey.Builder((RSAPublicKey) publicKey)
+                .keyID(keyId)
+                .algorithm(algorithm)
+                .keyUse(KeyUse.parse(KEY_USE));
+        
         if (Boolean.parseBoolean(IdentityUtil.getProperty(ENABLE_X5C_IN_RESPONSE))) {
-            jwk.x509CertChain(encodedCertList);
+            builder.x509CertChain(encodedCertList);
         }
+        
+        addThumbprints(builder, certificate, alias);
+        return builder.build();
+    }
+    
+    /**
+     * Add X.509 certificate thumbprints to RSA JWK builder.
+     */
+    private void addThumbprints(RSAKey.Builder builder, X509Certificate certificate, String alias)
+            throws ParseException, JOSEException, IdentityOAuth2Exception {
+        
         if (!Boolean.parseBoolean(IdentityUtil.getProperty(JWKS_IS_THUMBPRINT_HEXIFY_REQUIRED))) {
             // x5t#S256
             JWK parsedJWK = JWK.parse(certificate);
-            jwk.x509CertSHA256Thumbprint(parsedJWK.getX509CertSHA256Thumbprint());
+            builder.x509CertSHA256Thumbprint(parsedJWK.getX509CertSHA256Thumbprint());
 
             // x5t
             if (Boolean.parseBoolean(IdentityUtil.getProperty(JWT_X5T_ENABLED))) {
                 log.debug("Adding SHA-1 thumbprint (x5t) to JWK.");  
                 String certThumbPrint = OAuth2Util.getThumbPrintWithPrevAlgorithm(certificate, false);
-                jwk.x509CertThumbprint(new Base64URL(certThumbPrint));
+                builder.x509CertThumbprint(new Base64URL(certThumbPrint));
             }
         } else {
             // x5t#S256
-            jwk.x509CertSHA256Thumbprint(new Base64URL(OAuth2Util.getThumbPrint(certificate, alias)));
+            builder.x509CertSHA256Thumbprint(new Base64URL(OAuth2Util.getThumbPrint(certificate, alias)));
 
             // x5t
             if (Boolean.parseBoolean(IdentityUtil.getProperty(JWT_X5T_ENABLED))) {
                 String certThumbPrint = OAuth2Util.getThumbPrintWithPrevAlgorithm(certificate, true);
-                jwk.x509CertThumbprint(new Base64URL(certThumbPrint));
+                builder.x509CertThumbprint(new Base64URL(certThumbPrint));
             }
         }
-        return jwk;
     }
 
     /**
