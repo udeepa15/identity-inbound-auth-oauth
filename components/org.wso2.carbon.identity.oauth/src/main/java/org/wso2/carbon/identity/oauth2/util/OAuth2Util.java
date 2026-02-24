@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2013-2026, WSO2 LLC. (http://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -75,6 +75,7 @@ import org.wso2.carbon.identity.application.common.IdentityApplicationManagement
 import org.wso2.carbon.identity.application.common.model.ClaimMapping;
 import org.wso2.carbon.identity.application.common.model.FederatedAuthenticatorConfig;
 import org.wso2.carbon.identity.application.common.model.IdentityProvider;
+import org.wso2.carbon.identity.application.common.model.Property;
 import org.wso2.carbon.identity.application.common.model.ServiceProvider;
 import org.wso2.carbon.identity.application.common.model.ServiceProviderProperty;
 import org.wso2.carbon.identity.application.common.model.User;
@@ -4820,8 +4821,19 @@ public class OAuth2Util {
         if (IdentityTenantUtil.shouldUseTenantQualifiedURLs() && StringUtils.isEmpty(PrivilegedCarbonContext.
                 getThreadLocalCarbonContext().getApplicationResidentOrganizationId())) {
             try {
-                return isMtlsRequest ? OAuthURL.getOAuth2MTLSTokenEPUrl() :
-                        ServiceURLBuilder.create().addPath(OAUTH2_TOKEN_EP_URL).build().getAbsolutePublicURL();
+                if (isMtlsRequest) {
+                    return OAuthURL.getOAuth2MTLSTokenEPUrl();
+                }
+
+                if (OAuthServerConfiguration.getInstance().getIsUseEntityIDAsIssuerEnabled()) {
+                    return getResidentIdpEntityId(tenantDomain);
+                }
+
+                return ServiceURLBuilder.create()
+                        .addPath(OAUTH2_TOKEN_EP_URL)
+                        .build()
+                        .getAbsolutePublicURL();
+
             } catch (URLBuilderException e) {
                 String errorMsg = String.format("Error while building the absolute url of the context: '%s',  for the" +
                         " tenant domain: '%s'", OAUTH2_TOKEN_EP_URL, tenantDomain);
@@ -6496,5 +6508,71 @@ public class OAuth2Util {
         return Arrays.stream(serviceProviderProperties).
                 anyMatch(property -> IS_FRAGMENT_APP.equals(property.getName()) &&
                         Boolean.parseBoolean(property.getValue()));
+    }
+
+    /**
+     * Checks if JWT scope should be represented as an array in JWT access tokens.
+     * Configuration priority:
+     * 1. Application-level configuration (highest priority)
+     * 2. Tenant-level configuration from resident IDP OIDC properties
+     * 3. Default value (false) - maintains RFC 9068 compliance with space-delimited string
+     *
+     * @param oAuthAppDO   OAuth application data object.
+     * @param tenantDomain Tenant domain to retrieve the tenant-level configuration from.
+     * @return true if JWT scope should be an array, false for space-delimited string.
+     */
+    public static boolean isJwtScopeAsArrayEnabled(OAuthAppDO oAuthAppDO, String tenantDomain) {
+
+        // 1. App-Level Check (Highest Priority).
+        if (oAuthAppDO != null && oAuthAppDO.isJwtScopeAsArrayEnabled() != null) {
+            return oAuthAppDO.isJwtScopeAsArrayEnabled();
+        }
+
+        // 2. Tenant-Level Check.
+        return getTenantLevelJwtScopeAsArrayConfig(tenantDomain);
+    }
+
+    /**
+     * Retrieves JWT scope as array configuration from resident Identity Provider OIDC configuration.
+     * If no configuration is found, the default value is false.
+     *
+     * @param tenantDomain Tenant domain to retrieve the resident IDP configuration from.
+     * @return true if JWT scope as array is enabled in resident IDP configuration, false otherwise.
+     */
+    private static boolean getTenantLevelJwtScopeAsArrayConfig(String tenantDomain) {
+    
+        try {
+
+            IdentityProvider residentIdp = IdentityProviderManager.getInstance().getResidentIdP(tenantDomain);
+            
+            if (residentIdp == null) {
+                return false;
+            }
+
+            FederatedAuthenticatorConfig oidcFederatedAuthConfig =
+                    IdentityApplicationManagementUtil.getFederatedAuthenticator(
+                            residentIdp.getFederatedAuthenticatorConfigs(),
+                            IdentityApplicationConstants.Authenticator.OIDC.NAME);
+
+            if (oidcFederatedAuthConfig == null) {
+                return false;
+            }
+
+            Property enableJwtScopeAsArrayProperty = IdentityApplicationManagementUtil.getProperty(
+                    oidcFederatedAuthConfig.getProperties(),
+                    OAuthConstants.OIDCConfigProperties.ENABLE_JWT_SCOPE_AS_ARRAY);
+
+            if (enableJwtScopeAsArrayProperty != null &&
+                    StringUtils.isNotBlank(enableJwtScopeAsArrayProperty.getValue())) {
+                log.debug("Using tenant level config for JWT scope as array: " + 
+                        enableJwtScopeAsArrayProperty.getValue());
+                return Boolean.parseBoolean(enableJwtScopeAsArrayProperty.getValue());
+            }
+
+        } catch (IdentityProviderManagementException e) {
+            log.warn("Error while retrieving tenant-level JWT scope as array configuration.", e);
+        }
+        
+        return false;
     }
 }

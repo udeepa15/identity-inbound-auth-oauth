@@ -49,8 +49,6 @@ import org.wso2.carbon.utils.CarbonUtils;
 
 import java.io.FileInputStream;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.KeyStore;
@@ -70,7 +68,7 @@ import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 import static org.wso2.carbon.base.MultitenantConstants.SUPER_TENANT_DOMAIN_NAME;
 import static org.wso2.carbon.identity.oauth.endpoint.jwks.JwksEndpoint.JWKS_IS_THUMBPRINT_HEXIFY_REQUIRED;
-import static org.wso2.carbon.identity.oauth.endpoint.jwks.JwksEndpoint.JWKS_IS_X5T_REQUIRED;
+import static org.wso2.carbon.identity.oauth2.util.OAuth2Util.JWT_X5T_ENABLED;
 
 @Listeners(MockitoTestNGListener.class)
 public class JwksEndpointTest {
@@ -180,22 +178,17 @@ public class JwksEndpointTest {
                 threadLocalProperties.get().put(OAuthConstants.TENANT_NAME_FROM_CONTEXT, tenantDomain);
 
                 Field threadLocalPropertiesField = identityUtilObj.getClass().getDeclaredField("threadLocalProperties");
-                Method getDeclaredFields0 = Class.class.getDeclaredMethod("getDeclaredFields0", boolean.class);
-                getDeclaredFields0.setAccessible(true);
-                Field[] fields = (Field[]) getDeclaredFields0.invoke(Field.class, false);
-                Field modifiers = null;
-                for (Field each : fields) {
-                    if ("modifiers".equals(each.getName())) {
-                        modifiers = each;
-                        break;
-                    }
-                }
-                modifiers.setAccessible(true);
-                modifiers.setInt(threadLocalPropertiesField,
-                        threadLocalPropertiesField.getModifiers() & ~Modifier.FINAL);
 
                 threadLocalPropertiesField.setAccessible(true);
-                threadLocalPropertiesField.set(identityUtilObj, threadLocalProperties);
+
+                // Use Unsafe to modify static final fields in Java 12+
+                Field unsafeField = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+                unsafeField.setAccessible(true);
+                sun.misc.Unsafe unsafe = (sun.misc.Unsafe) unsafeField.get(null);
+
+                Object fieldBase = unsafe.staticFieldBase(threadLocalPropertiesField);
+                long fieldOffset = unsafe.staticFieldOffset(threadLocalPropertiesField);
+                unsafe.putObject(fieldBase, fieldOffset, threadLocalProperties);
 
                 identityTenantUtil.when(() -> IdentityTenantUtil.getTenantId(anyString())).thenReturn(tenantId);
 
@@ -315,7 +308,7 @@ public class JwksEndpointTest {
                 identityUtil.when(() -> IdentityUtil.getProperty(ENABLE_X5C_IN_RESPONSE)).thenReturn("true");
                 identityUtil.when(() -> IdentityUtil.getProperty(JWKS_IS_THUMBPRINT_HEXIFY_REQUIRED))
                         .thenReturn(String.valueOf(hexifyRequired));
-                identityUtil.when(() -> IdentityUtil.getProperty(JWKS_IS_X5T_REQUIRED))
+                identityUtil.when(() -> IdentityUtil.getProperty(JWT_X5T_ENABLED))
                         .thenReturn(String.valueOf(enableX5tInJWKS));
 
                 String result = jwksEndpoint.jwks();
